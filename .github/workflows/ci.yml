@@ -16,6 +16,6 @@ jobs:
           java-version: "21"
           cache: maven
       - name: Build and test
-        run: ./mvnw -B test
+        run: chmod +x mvnw && ./mvnw -B test
       - name: Build Docker image
         run: docker build -t swiftpay-ledger:${{ github.sha }} .
