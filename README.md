@@ -74,6 +74,7 @@ On Windows, run the capture wrapper from an elevated PowerShell session:
 ```
 
 The generated artifact is written to `artifacts/pcap/swiftpay-250tps-1m.pcapng`.
+The capture waits for `http://localhost:8080/health` before starting, then records only the service ports (`8080`, `3306`, `6379`, `9092`) so the resulting PCAP contains the actual HTTP, MySQL, Redis, and Kafka traffic.
 The capture needs an administrator shell because `pktmon` cannot start from a medium-integrity session.
 Install `k6` first or pass a different `-LoadCommand` if you want to use another load generator.
 
