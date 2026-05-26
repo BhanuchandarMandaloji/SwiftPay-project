@@ -32,8 +32,8 @@ function Wait-ForHealth {
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     while ((Get-Date) -lt $deadline) {
         try {
-            $response = Invoke-WebRequest -Uri $Url -TimeoutSec 5
-            if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 300) {
+            $statusCode = & curl.exe --silent --show-error --max-time 5 --output NUL --write-out "%{http_code}" $Url
+            if ($LASTEXITCODE -eq 0 -and $statusCode -match '^\d{3}$' -and [int]$statusCode -ge 200 -and [int]$statusCode -lt 300) {
                 return
             }
         }
@@ -77,10 +77,21 @@ finally {
 
 Write-Host "Converting ETL to PCAPNG: $pcapngPath"
 & pktmon etl2pcap $etlPath --out $pcapngPath | Out-Null
+
+$pcapInfo = Get-Item $pcapngPath
+if ($pcapInfo.Length -lt 1024) {
+    Write-Warning "Standard PCAPNG was empty or too small; regenerating with drop-only events."
+    & pktmon etl2pcap $etlPath --drop-only --out $pcapngPath | Out-Null
+    $pcapInfo = Get-Item $pcapngPath
+}
+
 & pktmon filter remove | Out-Null
 
-if ($exitCode -ne 0) {
+if ($exitCode -eq 99) {
+    Write-Warning "k6 thresholds were crossed, but the PCAP artifact was still generated at $pcapngPath"
+}
+elseif ($exitCode -ne 0) {
     throw "Load command exited with code $exitCode"
 }
 
-Write-Host "PCAP generated at $pcapngPath"
+Write-Host "PCAP generated at $pcapngPath ($($pcapInfo.Length) bytes)"
