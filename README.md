@@ -69,3 +69,13 @@ Use the Docker-based capture path for the submission artifact. It starts the MyS
 
 The generated artifact is written to `artifacts/pcap/swiftpay-250tps-1m.pcap`.
 If you want to use a different load command, pass it with `-LoadCommand`. The default load command runs `k6` through Docker Compose, so the host does not need a local `k6` install.
+
+## Local PCAP Artifact
+
+If Docker Desktop is unavailable on the machine, use the local Wireshark/Npcap path instead. Install Wireshark and Npcap, start MySQL, Redis, Kafka, and the app on localhost, then run:
+
+```powershell
+.\scripts\capture-pcap-local.ps1
+```
+
+The local capture uses the Npcap loopback adapter and writes the artifact to `artifacts/pcap/swiftpay-250tps-1m.pcapng`. If `dumpcap` cannot see a loopback interface, Npcap is not installed correctly yet.
