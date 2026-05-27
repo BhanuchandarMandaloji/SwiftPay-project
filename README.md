@@ -59,26 +59,13 @@ The k6 script targets 250 TPS for 1,000,000 transactions.
 k6 run scripts/load-test.js
 ```
 
-To capture a PCAP trace during the run:
-
-```bash
-sudo tcpdump -i any -w swiftpay-250tps-1m.pcap port 8080 or port 9092 or port 3306 or port 6379
-```
-
 ## PCAP Artifact
 
-On Windows, run the capture wrapper from an elevated PowerShell session:
+Use the Docker-based capture path for the submission artifact. It starts the MySQL, Redis, Kafka, and app services in Docker, runs the load generator in the same compose network, and captures the app-side traffic with `tcpdump`.
 
 ```powershell
-.\scripts\capture-pcap.ps1 -LoadCommand "k6 run scripts/load-test.js"
+.\scripts\capture-pcap-docker.ps1
 ```
 
-The generated artifact is written to `artifacts/pcap/swiftpay-250tps-1m.pcapng`.
-The capture waits for `http://localhost:8080/health` before starting, then records only the service ports (`8080`, `3306`, `6379`, `9092`) so the resulting PCAP contains the actual HTTP, MySQL, Redis, and Kafka traffic.
-If the normal PCAP conversion is too small on Windows, the script automatically regenerates the artifact from drop-only events so the file is still decodable.
-The capture needs an administrator shell because `pktmon` cannot start from a medium-integrity session.
-Install `k6` first or pass a different `-LoadCommand` if you want to use another load generator.
-
-```powershell
-winget install grafana.k6
-```
+The generated artifact is written to `artifacts/pcap/swiftpay-250tps-1m.pcap`.
+If you want to use a different load command, pass it with `-LoadCommand`. The default load command runs `k6` through Docker Compose, so the host does not need a local `k6` install.

@@ -64,5 +64,38 @@ services:
     ports:
       - "8080:8080"
 
+  loadtest:
+    image: grafana/k6:0.55.2
+    depends_on:
+      app:
+        condition: service_started
+    environment:
+      BASE_URL: http://app:8080
+    volumes:
+      - ./scripts:/scripts:ro
+    command:
+      - run
+      - /scripts/load-test.js
+    profiles:
+      - loadtest
+
+  capture:
+    image: nicolaka/netshoot:latest
+    depends_on:
+      app:
+        condition: service_started
+    network_mode: service:app
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - ./artifacts/pcap:/captures
+    command:
+      - sh
+      - -lc
+      - tcpdump -i any -s 0 -U -w /captures/swiftpay-250tps-1m.pcap 'tcp port 8080 or tcp port 3306 or tcp port 6379 or tcp port 9092'
+    profiles:
+      - capture
+
 volumes:
   mysql-data:
