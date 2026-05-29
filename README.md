@@ -29,7 +29,7 @@ If you want to run the app on Windows without Docker, start the repo-local MySQL
 ```
 
 That script provisions `artifacts/mysql-data/` and configures the `swiftpay / swiftpay` credentials expected by `application.properties`.
-For MySQL Workbench on Windows, connect to `127.0.0.1:3306` with the `root / Bhanu@454` admin account after starting the script.
+For MySQL Workbench on Windows, connect to `127.0.0.1:3306` with the `swiftpay / swiftpay` account after starting the script.
 
 Seeded demo accounts:
 

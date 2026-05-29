@@ -1,7 +1,6 @@
 param(
     [string]$DataDir = "artifacts/mysql-data/local",
     [int]$Port = 3306,
-    [string]$RootPassword = "Bhanu@454",
     [string]$AppUser = "swiftpay",
     [string]$AppPassword = "swiftpay",
     [int]$TimeoutSeconds = 300
@@ -75,6 +74,117 @@ function Invoke-MySql {
     return ($LASTEXITCODE -eq 0)
 }
 
+function Write-MySqlIni {
+    param(
+        [string]$InstallDir,
+        [string]$ResolvedDataDir,
+        [string]$IniPath,
+        [int]$Port
+    )
+
+    $basedirIni = $InstallDir.Replace('\', '/')
+    $datadirIni = $ResolvedDataDir.Replace('\', '/')
+    @"
+[mysqld]
+basedir=$basedirIni
+datadir=$datadirIni
+port=$Port
+bind-address=127.0.0.1
+pid-file=$datadirIni/mysqld.pid
+log-error=$datadirIni/mysql.err
+skip-log-bin
+"@ | Set-Content -Path $IniPath -Encoding ASCII
+}
+
+function Initialize-MySqlDataDir {
+    param(
+        [string]$MysqlExe,
+        [string]$InstallDir,
+        [string]$ResolvedDataDir
+    )
+
+    Write-Host "Initializing MySQL data directory at $ResolvedDataDir"
+    & $MysqlExe --no-defaults --initialize-insecure --basedir="$InstallDir" --datadir="$ResolvedDataDir" --console
+    if ($LASTEXITCODE -ne 0) {
+        throw "MySQL initialization failed with exit code $LASTEXITCODE."
+    }
+}
+
+function Start-MySqlProcess {
+    param(
+        [string]$MySqlExe,
+        [string]$IniPath
+    )
+
+    Write-Host "Starting MySQL with config $IniPath"
+    return Start-Process -FilePath $MySqlExe -ArgumentList @("--defaults-file=`"$IniPath`"", "--console") -PassThru -WindowStyle Hidden
+}
+
+function Configure-MySqlAccounts {
+    param(
+        [string]$MysqlExe,
+        [int]$Port,
+        [string]$AppUser,
+        [string]$AppPassword
+    )
+
+    $sql = @"
+CREATE DATABASE IF NOT EXISTS swiftpay;
+CREATE USER IF NOT EXISTS '$AppUser'@'localhost' IDENTIFIED WITH mysql_native_password BY '$AppPassword';
+CREATE USER IF NOT EXISTS '$AppUser'@'127.0.0.1' IDENTIFIED WITH mysql_native_password BY '$AppPassword';
+GRANT ALL PRIVILEGES ON swiftpay.* TO '$AppUser'@'localhost';
+GRANT ALL PRIVILEGES ON swiftpay.* TO '$AppUser'@'127.0.0.1';
+FLUSH PRIVILEGES;
+"@
+
+    if (-not (Invoke-MySql -MysqlExe $MysqlExe -Port $Port -Sql $sql)) {
+        return $false
+    }
+
+    $appGrants = & $MysqlExe --protocol=tcp -h 127.0.0.1 -P $Port -u $AppUser -p$AppPassword -Nse "SHOW GRANTS FOR CURRENT_USER();"
+    if ($LASTEXITCODE -ne 0 -or ($appGrants -notmatch "GRANT ALL PRIVILEGES ON ``swiftpay``\.\* TO ``$AppUser``@``127\.0\.0\.1``")) {
+        return $false
+    }
+
+    return $true
+}
+
+function Reset-MySqlDataDir {
+    param([string]$ResolvedDataDir)
+
+    if (Test-Path $ResolvedDataDir) {
+        Write-Host "Removing stale MySQL data directory at $ResolvedDataDir"
+        for ($attempt = 1; $attempt -le 5; $attempt++) {
+            try {
+                Remove-Item -LiteralPath $ResolvedDataDir -Recurse -Force -ErrorAction Stop
+                break
+            }
+            catch {
+                if ($attempt -eq 5) {
+                    throw
+                }
+                Start-Sleep -Seconds 1
+            }
+        }
+    }
+    New-Item -ItemType Directory -Force -Path $ResolvedDataDir | Out-Null
+}
+
+function Stop-MySqlProcess {
+    param([int]$ProcessId)
+
+    if (-not $ProcessId) {
+        return
+    }
+
+    Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
+    try {
+        Wait-Process -Id $ProcessId -Timeout 15 -ErrorAction Stop
+    }
+    catch {
+    }
+}
+
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $repoRoot
 
@@ -99,6 +209,7 @@ $iniPath = Join-Path $resolvedDataDir "swiftpay-local-my.ini"
 $readyMarker = Join-Path $resolvedDataDir ".swiftpay-local.ready"
 $logPath = Join-Path $resolvedDataDir "mysql.err"
 $initialized = Test-Path (Join-Path $resolvedDataDir "mysql")
+$serverProcessId = $null
 
 $listener = Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
     Where-Object { $_.LocalPort -eq $Port } |
@@ -111,28 +222,13 @@ if ($listener -and -not (Test-Path $readyMarker)) {
 
 if (-not $listener) {
     if (-not $initialized) {
-        Write-Host "Initializing MySQL data directory at $resolvedDataDir"
-        & $mysqldExe --no-defaults --initialize-insecure --basedir="$installDir" --datadir="$resolvedDataDir" --console
-        if ($LASTEXITCODE -ne 0) {
-            throw "MySQL initialization failed with exit code $LASTEXITCODE."
-        }
+        Initialize-MySqlDataDir -MysqlExe $mysqldExe -InstallDir $installDir -ResolvedDataDir $resolvedDataDir
     }
 
-    $basedirIni = $installDir.Replace('\', '/')
-    $datadirIni = $resolvedDataDir.Replace('\', '/')
-    @"
-[mysqld]
-basedir=$basedirIni
-datadir=$datadirIni
-port=$Port
-bind-address=127.0.0.1
-pid-file=$datadirIni/mysqld.pid
-log-error=$datadirIni/mysql.err
-skip-log-bin
-"@ | Set-Content -Path $iniPath -Encoding ASCII
+    Write-MySqlIni -InstallDir $installDir -ResolvedDataDir $resolvedDataDir -IniPath $iniPath -Port $Port
 
-    Write-Host "Starting MySQL on 127.0.0.1:$Port"
-    $process = Start-Process -FilePath $mysqldExe -ArgumentList @("--defaults-file=`"$iniPath`"", "--console") -PassThru -WindowStyle Hidden
+    $process = Start-MySqlProcess -MySqlExe $mysqldExe -IniPath $iniPath
+    $serverProcessId = $process.Id
     try {
         Wait-ForPort -Port $Port -TimeoutSeconds $TimeoutSeconds -ProcessId $process.Id
     }
@@ -146,36 +242,26 @@ skip-log-bin
 }
 else {
     Write-Host "MySQL is already listening on 127.0.0.1:$Port"
+    $serverProcessId = $listener.OwningProcess
 }
 
-$sql = @"
-CREATE DATABASE IF NOT EXISTS swiftpay;
-CREATE USER IF NOT EXISTS 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '$RootPassword';
-ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '$RootPassword';
-GRANT ALL PRIVILEGES ON *.* TO 'root'@'localhost' WITH GRANT OPTION;
-CREATE USER IF NOT EXISTS 'root'@'127.0.0.1' IDENTIFIED WITH mysql_native_password BY '$RootPassword';
-ALTER USER 'root'@'127.0.0.1' IDENTIFIED WITH mysql_native_password BY '$RootPassword';
-GRANT ALL PRIVILEGES ON *.* TO 'root'@'127.0.0.1' WITH GRANT OPTION;
-CREATE USER IF NOT EXISTS '$AppUser'@'localhost' IDENTIFIED WITH mysql_native_password BY '$AppPassword';
-CREATE USER IF NOT EXISTS '$AppUser'@'127.0.0.1' IDENTIFIED WITH mysql_native_password BY '$AppPassword';
-GRANT ALL PRIVILEGES ON swiftpay.* TO '$AppUser'@'localhost';
-GRANT ALL PRIVILEGES ON swiftpay.* TO '$AppUser'@'127.0.0.1';
-FLUSH PRIVILEGES;
-"@
+if (-not (Configure-MySqlAccounts -MysqlExe $mysqlExe -Port $Port -AppUser $AppUser -AppPassword $AppPassword)) {
+    Write-Host "MySQL accounts were not provisioned cleanly. Rebuilding the local data directory."
+    Stop-MySqlProcess -ProcessId $serverProcessId
 
-if (-not (Invoke-MySql -MysqlExe $mysqlExe -Port $Port -Sql $sql)) {
-    if (-not (Invoke-MySql -MysqlExe $mysqlExe -Port $Port -Sql $sql -Password $RootPassword)) {
+    Reset-MySqlDataDir -ResolvedDataDir $resolvedDataDir
+    Initialize-MySqlDataDir -MysqlExe $mysqldExe -InstallDir $installDir -ResolvedDataDir $resolvedDataDir
+    Write-MySqlIni -InstallDir $installDir -ResolvedDataDir $resolvedDataDir -IniPath $iniPath -Port $Port
+    $process = Start-MySqlProcess -MySqlExe $mysqldExe -IniPath $iniPath
+    $serverProcessId = $process.Id
+    Wait-ForPort -Port $Port -TimeoutSeconds $TimeoutSeconds -ProcessId $process.Id
+
+    if (-not (Configure-MySqlAccounts -MysqlExe $mysqlExe -Port $Port -AppUser $AppUser -AppPassword $AppPassword)) {
         throw "Unable to configure MySQL on 127.0.0.1:$Port."
     }
-}
-
-$adminGrants = & $mysqlExe --protocol=tcp -h 127.0.0.1 -P $Port -u root -p$RootPassword -Nse "SHOW GRANTS FOR CURRENT_USER();"
-if ($LASTEXITCODE -ne 0 -or ($adminGrants -notmatch "GRANT ALL PRIVILEGES ON \*\.\* TO ``root``@``127\.0\.0\.1`` WITH GRANT OPTION")) {
-    throw "MySQL root admin grants were not verified for 127.0.0.1:$Port. If this data directory was bootstrapped before the latest script update, remove '$resolvedDataDir' and rerun scripts/start-mysql-local.ps1."
 }
 
 New-Item -ItemType File -Force -Path $readyMarker | Out-Null
 
 Write-Host "MySQL is ready on 127.0.0.1:$Port"
-Write-Host "Spring Boot default credentials: $AppUser / $AppPassword"
-Write-Host "Administrative root credentials also available: root / $RootPassword"
+Write-Host "Spring Boot and Workbench credentials: $AppUser / $AppPassword"
