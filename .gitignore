@@ -34,3 +34,6 @@ build/
 
 # PCAP capture intermediates
 /artifacts/pcap/*.etl
+/artifacts/pcap/*-raw.pcapng
+/artifacts/mysql-data/
+/artifacts/run-logs/

@@ -33,16 +33,17 @@ function Wait-ForHealth {
 
 function Find-Dumpcap {
     $candidates = @(
-        (Get-Command dumpcap -ErrorAction SilentlyContinue).Source,
         "C:\Program Files\Wireshark\dumpcap.exe",
         "C:\Program Files (x86)\Wireshark\dumpcap.exe"
-    ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
+    )
 
-    if (-not $candidates) {
-        throw "dumpcap is not available. Install Wireshark and Npcap first."
+    foreach ($candidate in $candidates) {
+        if (Test-Path $candidate) {
+            return $candidate
+        }
     }
 
-    return $candidates[0]
+    throw "dumpcap is not available. Install Wireshark and Npcap first."
 }
 
 function Find-LoopbackInterfaceId {
@@ -50,10 +51,16 @@ function Find-LoopbackInterfaceId {
         [string]$DumpcapPath
     )
 
-    $interfaces = & $DumpcapPath -D
-    if ($LASTEXITCODE -ne 0) {
+    $stdout = Join-Path $env:TEMP ("dumpcap-" + [guid]::NewGuid().ToString("N") + ".log")
+    $stderr = Join-Path $env:TEMP ("dumpcap-" + [guid]::NewGuid().ToString("N") + ".err")
+
+    $process = Start-Process -FilePath $DumpcapPath -ArgumentList '-D' -Wait -PassThru -NoNewWindow -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    if ($process.ExitCode -ne 0) {
         throw "dumpcap -D failed. Install Npcap and ensure capture permissions are available."
     }
+
+    $interfaces = Get-Content $stdout
+    Remove-Item -Force $stdout, $stderr -ErrorAction SilentlyContinue
 
     $loopbackLine = $interfaces | Where-Object {
         $_ -match 'NPF_Loopback' -or
@@ -72,13 +79,6 @@ function Find-LoopbackInterfaceId {
     throw "Could not parse the loopback interface id from: $loopbackLine"
 }
 
-$principal = New-Object Security.Principal.WindowsPrincipal(
-    [Security.Principal.WindowsIdentity]::GetCurrent()
-)
-if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    throw "Run this script from an elevated PowerShell session."
-}
-
 if ($LoadCommand.TrimStart().StartsWith("k6") -and -not (Get-Command k6 -ErrorAction SilentlyContinue)) {
     throw "k6 is not available on PATH. Install k6 or pass a different -LoadCommand."
 }
@@ -88,18 +88,18 @@ Set-Location $repoRoot
 
 New-Item -ItemType Directory -Force -Path $ArtifactDir | Out-Null
 
+$dumpcapPath = Find-Dumpcap
+$loopbackInterfaceId = Find-LoopbackInterfaceId -DumpcapPath $dumpcapPath
+
 $pcapPath = Join-Path $ArtifactDir "$ArtifactName.pcapng"
 if (Test-Path $pcapPath) {
     Remove-Item -Force $pcapPath
 }
 
-$dumpcapPath = Find-Dumpcap
-$loopbackInterfaceId = Find-LoopbackInterfaceId -DumpcapPath $dumpcapPath
-
 Write-Host "Waiting for healthy app at $HealthUrl"
 Wait-ForHealth -Url $HealthUrl -TimeoutSeconds $HealthTimeoutSeconds
 
-Write-Host "Starting packet capture on loopback interface $loopbackInterfaceId"
+Write-Host "Starting packet capture on loopback interface $loopbackInterfaceId with filter: $CaptureFilter"
 $captureProcess = Start-Process `
     -FilePath $dumpcapPath `
     -ArgumentList @(

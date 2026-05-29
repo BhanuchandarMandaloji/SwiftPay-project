@@ -21,6 +21,16 @@ Useful URLs:
 - Swagger UI: `http://localhost:8080/swagger-ui.html`
 - OpenAPI JSON: `http://localhost:8080/v3/api-docs`
 
+If you want to run the app on Windows without Docker, start the repo-local MySQL instance first:
+
+```powershell
+.\scripts\start-mysql-local.ps1
+.\mvnw spring-boot:run
+```
+
+That script provisions `artifacts/mysql-data/` and configures the `swiftpay / swiftpay` credentials expected by `application.properties`.
+For MySQL Workbench on Windows, connect to `127.0.0.1:3306` with the `root / Bhanu@454` admin account after starting the script.
+
 Seeded demo accounts:
 
 - `user-100`, USD 10000.00
@@ -43,6 +53,14 @@ curl -X POST http://localhost:8080/v1/payments \
 - Consumer processing is transactional; transient database errors are retried by Kafka listener retry behavior.
 - API errors use a consistent JSON response with status, message, timestamp, and path.
 
+## Load Tuning
+
+The datasource pool is tuned for the 250 TPS load run so the gateway does not spend the entire test stalled on connection acquisition:
+
+- Hikari maximum pool size: `100`
+- Hikari minimum idle: `20`
+- Hikari connection timeout: `10000` ms
+
 ## Testing and CI
 
 ```bash
@@ -61,7 +79,9 @@ k6 run scripts/load-test.js
 
 ## PCAP Artifact
 
-Use the Docker-based capture path for the submission artifact. It starts the MySQL, Redis, Kafka, and app services in Docker, runs the load generator in the same compose network, and captures the app-side traffic with `tcpdump`.
+The checked-in artifact for review is `artifacts/pcap/swiftpay-250tps-1m.pcapng`.
+
+Use the Docker-based capture path if you need to regenerate a `.pcap` version. It starts the MySQL, Redis, Kafka, and app services in Docker, runs the load generator in the same compose network, and captures the app-side traffic with `tcpdump`.
 
 ```powershell
 .\scripts\capture-pcap-docker.ps1
@@ -74,8 +94,13 @@ If you want to use a different load command, pass it with `-LoadCommand`. The de
 
 If Docker Desktop is unavailable on the machine, use the local Wireshark/Npcap path instead. Install Wireshark and Npcap, start MySQL, Redis, Kafka, and the app on localhost, then run:
 
+If the Windows `MySQL80` service is stopped, run `.\scripts\start-mysql-local.ps1` first.
+
 ```powershell
 .\scripts\capture-pcap-local.ps1
 ```
 
 The local capture uses the Npcap loopback adapter and writes the artifact to `artifacts/pcap/swiftpay-250tps-1m.pcapng`. If `dumpcap` cannot see a loopback interface, Npcap is not installed correctly yet.
+It applies the TCP capture filter directly, so it avoids the large raw-file post-processing step that can fail on long load runs.
+
+Verification details for the checked-in capture are in [artifacts/pcap/README.md](artifacts/pcap/README.md).
