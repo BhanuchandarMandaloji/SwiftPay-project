@@ -93,7 +93,7 @@ services:
     command:
       - sh
       - -lc
-      - tcpdump -i any -s 0 -U -w /captures/swiftpay-250tps-1m.pcap 'tcp port 8080 or tcp port 3306 or tcp port 6379 or tcp port 9092'
+      - tcpdump -i any -s 0 -U -w /captures/load-test.pcap 'tcp port 8080 or tcp port 3306 or tcp port 6379 or tcp port 9092'
     profiles:
       - capture
 

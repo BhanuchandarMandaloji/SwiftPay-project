@@ -1,6 +1,6 @@
 param(
     [string]$LoadCommand = "docker compose --profile loadtest run --rm loadtest",
-    [string]$ArtifactName = "swiftpay-250tps-1m",
+    [string]$ArtifactName = "load-test",
     [string]$ArtifactDir = "artifacts/pcap",
     [string]$HealthUrl = "http://localhost:8080/health",
     [int]$HealthTimeoutSeconds = 180

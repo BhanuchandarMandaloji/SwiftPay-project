@@ -79,7 +79,7 @@ k6 run scripts/load-test.js
 
 ## PCAP Artifact
 
-The checked-in artifact for review is `artifacts/pcap/swiftpay-250tps-1m.pcapng`.
+The checked-in artifact for review is `artifacts/pcap/load-test.pcapng`.
 
 Use the Docker-based capture path if you need to regenerate a `.pcap` version. It starts the MySQL, Redis, Kafka, and app services in Docker, runs the load generator in the same compose network, and captures the app-side traffic with `tcpdump`.
 
@@ -87,7 +87,7 @@ Use the Docker-based capture path if you need to regenerate a `.pcap` version. I
 .\scripts\capture-pcap-docker.ps1
 ```
 
-The generated artifact is written to `artifacts/pcap/swiftpay-250tps-1m.pcap`.
+The generated artifact is written to `artifacts/pcap/load-test.pcap`.
 If you want to use a different load command, pass it with `-LoadCommand`. The default load command runs `k6` through Docker Compose, so the host does not need a local `k6` install.
 
 ## Local PCAP Artifact
@@ -100,7 +100,7 @@ If the Windows `MySQL80` service is stopped, run `.\scripts\start-mysql-local.ps
 .\scripts\capture-pcap-local.ps1
 ```
 
-The local capture uses the Npcap loopback adapter and writes the artifact to `artifacts/pcap/swiftpay-250tps-1m.pcapng`. If `dumpcap` cannot see a loopback interface, Npcap is not installed correctly yet.
+The local capture uses the Npcap loopback adapter and writes the artifact to `artifacts/pcap/load-test.pcapng`. If `dumpcap` cannot see a loopback interface, Npcap is not installed correctly yet.
 It applies the TCP capture filter directly, so it avoids the large raw-file post-processing step that can fail on long load runs.
 
 Verification details for the checked-in capture are in [artifacts/pcap/README.md](artifacts/pcap/README.md).

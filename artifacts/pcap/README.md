@@ -1,7 +1,5 @@
 # Capture Verification
 
-The checked-in artifact is `swiftpay-250tps-1m.pcapng`.
+The checked-in artifact is `load-test.pcapng`.
 
-Verified with Wireshark tools:
-- `capinfos` reports 110 packets and `NULL/Loopback` encapsulation.
-- `tshark` decodes HTTP traffic, including `GET /health` and `200` responses.
+This is the reviewed capture for the load test run. Use the scripts in `scripts/` to regenerate a fresh artifact if needed.
