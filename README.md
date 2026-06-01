@@ -33,7 +33,7 @@ For MySQL Workbench on Windows, connect to `127.0.0.1:3306` with the `swiftpay /
 
 Seeded demo accounts:
 
-- `user-100`, USD 10000.00
+- `user-100`, USD 2000000.00
 - `user-200`, USD 500.00
 - `user-300`, USD 750.00
 
